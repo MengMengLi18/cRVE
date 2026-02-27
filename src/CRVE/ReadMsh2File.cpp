@@ -56,24 +56,88 @@ void CRVE::ReadMsh2File(){
                 PhyID2NameList.push_back(make_pair(phyid,phyname));
             }
         }
+        // else if(str.find("$Nodes")!=string::npos){
+        //     _nNodes=0;
+        //     in>>_nNodes;
+        //     int id;
+        //     double x,y,z;
+
+
+        //     _Cx=0.0;_Cy=0.0;_Cz=0.0;
+
+        //     _Xmax=-1.0e16;_Xmin=1.0e16;
+        //     _Ymax=_Xmax;_Ymin=_Xmin;
+        //     _Zmax=_Xmax;_Zmin=_Xmin;
+        //     _NodeCoords.resize(_nNodes*3,0.0);
+        //     for(int i=0;i<_nNodes;i++){
+        //         in>>id>>x>>y>>z;
+        //         _NodeCoords[(id-1)*3+1-1]=x;
+        //         _NodeCoords[(id-1)*3+2-1]=y;
+        //         _NodeCoords[(id-1)*3+3-1]=z;
+        //         if(x>_Xmax) _Xmax=x;
+        //         if(x<_Xmin) _Xmin=x;
+        //         if(y>_Ymax) _Ymax=y;
+        //         if(y<_Ymin) _Ymin=y;
+        //         if(z>_Zmax) _Zmax=z;
+        //         if(z<_Zmin) _Zmin=z;
+
+        //         _Cx+=x/_nNodes;
+        //         _Cy+=y/_nNodes;
+        //         _Cz+=z/_nNodes;
+        //     }
+        //     getline(in,str);
+        // }
+
         else if(str.find("$Nodes")!=string::npos){
-            _nNodes=0;
-            in>>_nNodes;
+
+            _nNodes = 0;
+            in >> _nNodes;
+
             int id;
             double x,y,z;
 
+            _Cx=0.0; _Cy=0.0; _Cz=0.0;
 
-            _Cx=0.0;_Cy=0.0;_Cz=0.0;
+            _Xmax=-1.0e16; _Xmin=1.0e16;
+            _Ymax=_Xmax;   _Ymin=_Xmin;
+            _Zmax=_Xmax;   _Zmin=_Xmin;
 
-            _Xmax=-1.0e16;_Xmin=1.0e16;
-            _Ymax=_Xmax;_Ymin=_Xmin;
-            _Zmax=_Xmax;_Zmin=_Xmin;
-            _NodeCoords.resize(_nNodes*3,0.0);
+            // red nodes info to temporary vectors
+            vector<int>    tmpID(_nNodes);
+            vector<double> tmpX(_nNodes);
+            vector<double> tmpY(_nNodes);
+            vector<double> tmpZ(_nNodes);
+
+            int maxNodeID = 0;
+
             for(int i=0;i<_nNodes;i++){
-                in>>id>>x>>y>>z;
-                _NodeCoords[(id-1)*3+1-1]=x;
-                _NodeCoords[(id-1)*3+2-1]=y;
-                _NodeCoords[(id-1)*3+3-1]=z;
+                in >> id >> x >> y >> z;
+
+                tmpID[i] = id;
+                tmpX[i]  = x;
+                tmpY[i]  = y;
+                tmpZ[i]  = z;
+
+                if(id > maxNodeID)
+                    maxNodeID = id;
+            }
+
+                        // assign size to _NodeCoords and initialize with 0.0
+            _NodeCoords.clear();
+            _NodeCoords.resize(maxNodeID*3,0.0);
+
+            // fill _NodeCoords and compute bounding box and centroid
+            for(int i=0;i<_nNodes;i++){
+
+                id = tmpID[i];
+                x  = tmpX[i];
+                y  = tmpY[i];
+                z  = tmpZ[i];
+
+                _NodeCoords[(id-1)*3+0] = x;
+                _NodeCoords[(id-1)*3+1] = y;
+                _NodeCoords[(id-1)*3+2] = z;
+
                 if(x>_Xmax) _Xmax=x;
                 if(x<_Xmin) _Xmin=x;
                 if(y>_Ymax) _Ymax=y;
@@ -85,68 +149,152 @@ void CRVE::ReadMsh2File(){
                 _Cy+=y/_nNodes;
                 _Cz+=z/_nNodes;
             }
+
             getline(in,str);
         }
+
         else if(str.find("$Elements")!=string::npos){
             _nElmts=0;
             in>>_nElmts;
-            _ElmtConn.resize(_nElmts,vector<int>(0));
+            // _ElmtConn.resize(_nElmts,vector<int>(0));
 
             // cout<<"nElmts="<<_nElmts<<endl;
+
+            _ElmtConn.clear();
+            _ElmtDimVec.clear();
+            _ElmtTypeVec.clear();
+            _ElmtPhyIDVec.clear();
+
+            _ElmtConn.resize(_nElmts);
+            _ElmtDimVec.resize(_nElmts);
+            _ElmtTypeVec.resize(_nElmts);
+            _ElmtPhyIDVec.resize(_nElmts);
             
-            _ElmtDimVec.resize(_nElmts,0);
-            _ElmtTypeVec.resize(_nElmts,0);
-            _ElmtPhyIDVec.resize(_nElmts,0);
+            // _ElmtDimVec.resize(_nElmts,0);
+            // _ElmtTypeVec.resize(_nElmts,0);
+            // _ElmtPhyIDVec.resize(_nElmts,0);
 
             int elmtid;
+            int elmtCounter = 0;
             int phyid,geoid,ntags,elmttype;
             int nodes,dim;
             string elmttypename;
             _MeshUniDim2PhyID.clear();
             _MeshUniDim2GeoID.clear();
-            for(int ie=0;ie<_nElmts;ie++){
-                in>>elmtid>>elmttype>>ntags>>phyid>>geoid;
-                if(phyid==0&&geoid!=0) phyid=geoid;
-                nodes=GetElmtNodesNumViaGmshElmtType(elmttype);
-                dim=GetElmtDimViaGmshElmtType(elmttype);
-                elmttypename=GetElmtNameViaGmshElmtType(elmttype);
+
+        //     for(int ie=0;ie<_nElmts;ie++){
+        //         in>>elmtid>>elmttype>>ntags>>phyid>>geoid;
+        //         if(phyid==0&&geoid!=0) phyid=geoid;
+        //         nodes=GetElmtNodesNumViaGmshElmtType(elmttype);
+        //         dim=GetElmtDimViaGmshElmtType(elmttype);
+        //         elmttypename=GetElmtNameViaGmshElmtType(elmttype);
 
 
-                if(dim>_nMaxDim) _nMaxDim=dim;
-                if(dim<_nMinDim) _nMinDim=dim;
+        //         if(dim>_nMaxDim) _nMaxDim=dim;
+        //         if(dim<_nMinDim) _nMinDim=dim;
 
-                if(phyid==MatrixMshPhyID||phyid==ParticleMshPhyID){
-                    if(dim==3){
-                        if(phyid<100) phyid+=100000;
-                    }
-                }
+        //         if(phyid==MatrixMshPhyID||phyid==ParticleMshPhyID){
+        //             if(dim==3){
+        //                 if(phyid<100) phyid+=100000;
+        //             }
+        //         }
 
-                if(dim==2){
-                    _SurfaceElmtTypeName=elmttypename;
-                }
-                if(dim==3){
-                    _BulkElmtTypeName=elmttypename;
-                }
+        //         if(dim==2){
+        //             _SurfaceElmtTypeName=elmttypename;
+        //         }
+        //         if(dim==3){
+        //             _BulkElmtTypeName=elmttypename;
+        //         }
 
 
-                _ElmtConn[elmtid-1].resize(nodes+1,0);
-                _ElmtConn[elmtid-1][0]=nodes;
-                for(int j=0;j<nodes;j++){
-                    in>>_ElmtConn[elmtid-1][j+1];
-                }
-                _ElmtDimVec[elmtid-1]=dim;
-                _ElmtTypeVec[elmtid-1]=elmttype;
-                _ElmtPhyIDVec[elmtid-1]=phyid;
+        //         _ElmtConn[elmtid-1].resize(nodes+1,0);
+        //         _ElmtConn[elmtid-1][0]=nodes;
+        //         for(int j=0;j<nodes;j++){
+        //             in>>_ElmtConn[elmtid-1][j+1];
+        //         }
+        //         _ElmtDimVec[elmtid-1]=dim;
+        //         _ElmtTypeVec[elmtid-1]=elmttype;
+        //         _ElmtPhyIDVec[elmtid-1]=phyid;
 
                 
-                if(_MeshUniDim2PhyID.size()==0){
-                    _MeshUniDim2PhyID.push_back(make_pair(dim,phyid));
-                    _MeshUniDim2GeoID.push_back(make_pair(dim,geoid));
+        //         if(_MeshUniDim2PhyID.size()==0){
+        //             _MeshUniDim2PhyID.push_back(make_pair(dim,phyid));
+        //             _MeshUniDim2GeoID.push_back(make_pair(dim,geoid));
+        //         }
+        //         else{
+        //             bool IsUni=true;
+        //             for(unsigned int i=0;i<_MeshUniDim2PhyID.size();i++){
+        //                 if(dim==_MeshUniDim2PhyID[i].first && phyid==_MeshUniDim2PhyID[i].second){
+        //                     IsUni=false;
+        //                     break;
+        //                 }
+        //             }
+        //             if(IsUni){
+        //                 _MeshUniDim2PhyID.push_back(make_pair(dim,phyid));
+        //                 _MeshUniDim2GeoID.push_back(make_pair(dim,geoid));
+        //             }
+        //         }
+        //     }
+        // }
+            cout << "_nElmts = " << _nElmts << endl;
+            cout << "_ElmtConn.size() = " << _ElmtConn.size() << endl;
+            
+        for(int ie=0; ie<_nElmts; ie++){
+            in >> elmtid >> elmttype >> ntags;
+
+            // 读取所有 tags
+            vector<int> tags(ntags);
+            for(int t=0; t<ntags; t++){
+                    in >> tags[t];
                 }
-                else{
-                    bool IsUni=true;
-                    for(unsigned int i=0;i<_MeshUniDim2PhyID.size();i++){
-                        if(dim==_MeshUniDim2PhyID[i].first && phyid==_MeshUniDim2PhyID[i].second){
+
+            phyid = (ntags > 0) ? tags[0] : 0;
+            geoid = (ntags > 1) ? tags[1] : 0;
+
+            // in >> elmtid >> elmttype >> ntags >> phyid >> geoid;
+
+            if(phyid==0 && geoid!=0) phyid = geoid;
+
+            nodes = GetElmtNodesNumViaGmshElmtType(elmttype);
+            dim   = GetElmtDimViaGmshElmtType(elmttype);
+            elmttypename = GetElmtNameViaGmshElmtType(elmttype);
+
+            if(dim > _nMaxDim) _nMaxDim = dim;
+            if(dim < _nMinDim) _nMinDim = dim;
+
+            if(phyid==MatrixMshPhyID || phyid==ParticleMshPhyID){
+                if(dim==3){
+                    if(phyid<100) phyid+=100000;
+                }
+            }
+
+            if(dim==2){
+                _SurfaceElmtTypeName = elmttypename;
+            }
+            if(dim==3){
+                _BulkElmtTypeName = elmttypename;
+            }
+
+            _ElmtConn[elmtCounter].resize(nodes+1,0);
+            _ElmtConn[elmtCounter][0] = nodes;
+
+            for(int j=0;j<nodes;j++){
+                in >> _ElmtConn[elmtCounter][j+1];
+            }
+
+            _ElmtDimVec[elmtCounter]   = dim;
+            _ElmtTypeVec[elmtCounter]  = elmttype;
+            _ElmtPhyIDVec[elmtCounter] = phyid;
+
+            if(_MeshUniDim2PhyID.size()==0){
+                _MeshUniDim2PhyID.push_back(make_pair(dim,phyid));
+                _MeshUniDim2GeoID.push_back(make_pair(dim,geoid));
+            }
+            else{
+                bool IsUni=true;
+                for(unsigned int i=0;i<_MeshUniDim2PhyID.size();i++){
+                    if(dim==_MeshUniDim2PhyID[i].first &&
+                        phyid==_MeshUniDim2PhyID[i].second){
                             IsUni=false;
                             break;
                         }
@@ -156,7 +304,10 @@ void CRVE::ReadMsh2File(){
                         _MeshUniDim2GeoID.push_back(make_pair(dim,geoid));
                     }
                 }
+
+                elmtCounter++;
             }
+            cout << "elmtCounter = " << elmtCounter << endl;
         }
     }
     in.close();
